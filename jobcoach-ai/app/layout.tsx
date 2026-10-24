@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Fraunces, Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -12,21 +12,28 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+const fraunces = Fraunces({
+  variable: "--font-fraunces",
+  subsets: ["latin"],
+  style: ["normal", "italic"],
+});
+
 export const metadata: Metadata = {
-  title: "JobCoach AI",
+  title: {
+    default: "JobCoach AI — Coach emploi honnête",
+    template: "%s — JobCoach AI",
+  },
   description:
-    "Assistant pour rédiger un CV, une lettre de motivation et préparer un entretien d'embauche.",
+    "Rédigez un CV, une lettre de motivation et préparez vos entretiens. JobCoach AI s'appuie uniquement sur votre parcours, sans rien inventer ni sauvegarder.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="fr"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${geistSans.variable} ${geistMono.variable} ${fraunces.variable} h-full scroll-smooth antialiased`}
     >
-      <body className="min-h-full flex flex-col bg-slate-100 text-slate-900">
-        {children}
-      </body>
+      <body className="min-h-full flex flex-col bg-paper text-ink">{children}</body>
     </html>
   );
 }

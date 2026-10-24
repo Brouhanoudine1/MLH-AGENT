@@ -1,605 +1,348 @@
-"use client";
+import Link from "next/link";
+import Reveal from "@/components/Reveal";
+import SiteFooter from "@/components/SiteFooter";
+import SiteHeader from "@/components/SiteHeader";
 
-import { useMemo, useState } from "react";
-import type { FormEvent, KeyboardEvent } from "react";
-import Markdown from "@/components/Markdown";
-import type { CoachModule } from "@/lib/prompts";
-
-type ChatRole = "user" | "assistant";
-
-type ChatMessage = {
-  role: ChatRole;
-  content: string;
-};
-
-type TabDefinition = {
-  id: CoachModule;
-  label: string;
-};
-
-type CoachSuccess = {
-  result: string;
-};
-
-type CoachFailure = {
-  error: string;
-};
-
-const TABS: TabDefinition[] = [
-  { id: "create-cv", label: "Créer mon CV" },
-  { id: "review-cv", label: "Corriger mon CV" },
-  { id: "cover-letter", label: "Lettre de motivation" },
-  { id: "interview-prep", label: "Préparer l'entretien" },
-  { id: "recruiter-sim", label: "Simulateur de recruteur" },
+const OUTILS = [
+  {
+    numero: "01",
+    titre: "Créer un CV",
+    texte:
+      "Transformez votre parcours en un CV clair : en-tête, profil, expériences, formation et compétences.",
+  },
+  {
+    numero: "02",
+    titre: "Corriger un CV",
+    texte:
+      "Obtenez un score, des points forts, des faiblesses priorisées et des reformulations Avant / Après.",
+  },
+  {
+    numero: "03",
+    titre: "Lettre de motivation",
+    texte:
+      "Une lettre de 300 à 350 mots, liée au poste, sans formules creuses, prête à personnaliser.",
+  },
+  {
+    numero: "04",
+    titre: "Préparer l'entretien",
+    texte:
+      "Huit questions probables, des réponses en méthode STAR, et ce qu'il faut vérifier avant le jour J.",
+  },
+  {
+    numero: "05",
+    titre: "Simulateur de recruteur",
+    texte:
+      "Un entretien réaliste, une question à la fois, puis un débrief honnête : prêt, à retravailler ou à renforcer.",
+  },
 ];
 
-const WRITING_MODULES: CoachModule[] = [
-  "create-cv",
-  "review-cv",
-  "cover-letter",
-  "interview-prep",
+const ETAPES = [
+  {
+    numero: "1",
+    titre: "Collez votre matière",
+    texte: "CV, offre d'emploi ou notes de parcours. Tout reste dans votre navigateur.",
+  },
+  {
+    numero: "2",
+    titre: "Choisissez un outil",
+    texte: "Cinq modules, un objectif chacun. L'IA ne travaille que sur ce que vous donnez.",
+  },
+  {
+    numero: "3",
+    titre: "Reprenez, copiez, partez",
+    texte: "Corrigez, copiez, relancez. Rien n'est stocké. Vous repartez avec un texte à vous.",
+  },
 ];
 
-const START_INTERVIEW_MESSAGE = "Bonjour, je suis prêt pour commencer l'entretien.";
-const MAX_FIELD_LENGTH = 20_000;
+const MARQUEE = [
+  "Créer un CV",
+  "Corriger",
+  "Lettre de motivation",
+  "Entretien STAR",
+  "Simulateur",
+  "Sans compte",
+  "Rien n'est inventé",
+  "Rien n'est sauvegardé",
+];
 
-function isCoachSuccess(value: unknown): value is CoachSuccess {
+export default function Accueil() {
   return (
-    typeof value === "object" &&
-    value !== null &&
-    "result" in value &&
-    typeof value.result === "string"
-  );
-}
+    <div className="flex min-h-full flex-col">
+      <SiteHeader />
 
-function isCoachFailure(value: unknown): value is CoachFailure {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "error" in value &&
-    typeof value.error === "string"
-  );
-}
+      <main>
+        <section className="relative overflow-hidden">
+          <div className="orb orb-gold top-[-6rem] right-[8%] hidden h-64 w-64 sm:block" />
+          <div className="orb orb-forest top-[18%] left-[-5rem] hidden h-72 w-72 sm:block" />
+          <div className="orb orb-clay bottom-[-4rem] right-[28%] hidden h-52 w-52 sm:block" />
 
-function missingFields(
-  module: CoachModule,
-  cv: string,
-  offer: string,
-  extra: string,
-): string[] {
-  const missing: string[] = [];
-  if (module === "create-cv" && !extra.trim()) {
-    missing.push("les informations complémentaires");
-  }
-  if (module === "review-cv" && !cv.trim()) {
-    missing.push("votre CV");
-  }
-  if (
-    module === "cover-letter" ||
-    module === "interview-prep" ||
-    module === "recruiter-sim"
-  ) {
-    if (!cv.trim()) {
-      missing.push("votre CV");
-    }
-    if (!offer.trim()) {
-      missing.push("l'offre d'emploi");
-    }
-  }
-  return missing;
-}
-
-function missingMessage(missing: string[]): string {
-  if (missing.length === 0) {
-    return "";
-  }
-  if (missing.length === 1) {
-    return `Veuillez renseigner ${missing[0]}.`;
-  }
-  const debut = missing.slice(0, -1).join(", ");
-  return `Veuillez renseigner ${debut} et ${missing[missing.length - 1]}.`;
-}
-
-async function callCoach(body: {
-  module: CoachModule;
-  cv?: string;
-  offer?: string;
-  extra?: string;
-  messages?: ChatMessage[];
-}): Promise<string> {
-  const response = await fetch("/api/coach", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-
-  let data: unknown;
-  try {
-    data = await response.json();
-  } catch {
-    throw new Error("La réponse du serveur est illisible.");
-  }
-
-  if (!response.ok) {
-    if (isCoachFailure(data)) {
-      throw new Error(data.error);
-    }
-    throw new Error("Une erreur est survenue. Veuillez réessayer.");
-  }
-
-  if (!isCoachSuccess(data) || !data.result.trim()) {
-    throw new Error("La génération a échoué. Veuillez réessayer.");
-  }
-
-  return data.result;
-}
-
-function Spinner() {
-  return (
-    <span
-      className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"
-      aria-hidden="true"
-    />
-  );
-}
-
-export default function Home() {
-  const [activeTab, setActiveTab] = useState<CoachModule>("create-cv");
-  const [cv, setCv] = useState("");
-  const [offer, setOffer] = useState("");
-  const [extra, setExtra] = useState("");
-  const [results, setResults] = useState<Partial<Record<CoachModule, string>>>({});
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [copied, setCopied] = useState(false);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [draft, setDraft] = useState("");
-
-  const missing = useMemo(
-    () => missingFields(activeTab, cv, offer, extra),
-    [activeTab, cv, offer, extra],
-  );
-  const canGenerate = missing.length === 0 && !loading;
-  const currentResult = results[activeTab] ?? "";
-  const interviewStarted = messages.length > 0;
-  const hasRecruiterReply = messages.some((message) => message.role === "assistant");
-
-  async function generateWriting() {
-    if (!canGenerate || !WRITING_MODULES.includes(activeTab)) {
-      return;
-    }
-
-    setLoading(true);
-    setError("");
-    setCopied(false);
-
-    try {
-      const result = await callCoach({
-        module: activeTab,
-        cv,
-        offer,
-        extra,
-      });
-      setResults((current) => ({ ...current, [activeTab]: result }));
-    } catch (caught) {
-      setError(
-        caught instanceof Error
-          ? caught.message
-          : "Une erreur est survenue. Veuillez réessayer.",
-      );
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function sendSimulatorMessages(nextMessages: ChatMessage[]) {
-    setMessages(nextMessages);
-    setLoading(true);
-    setError("");
-
-    try {
-      const result = await callCoach({
-        module: "recruiter-sim",
-        cv,
-        offer,
-        extra,
-        messages: nextMessages,
-      });
-      setMessages([...nextMessages, { role: "assistant", content: result }]);
-    } catch (caught) {
-      setError(
-        caught instanceof Error
-          ? caught.message
-          : "Une erreur est survenue. Veuillez réessayer.",
-      );
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function startInterview() {
-    if (missing.length > 0 || loading) {
-      return;
-    }
-    await sendSimulatorMessages([
-      { role: "user", content: START_INTERVIEW_MESSAGE },
-    ]);
-  }
-
-  async function sendCandidateMessage() {
-    const content = draft.trim();
-    if (!content || loading || !interviewStarted) {
-      return;
-    }
-    setDraft("");
-    await sendSimulatorMessages([...messages, { role: "user", content }]);
-  }
-
-  function onDraftKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
-    if (event.key === "Enter" && !event.shiftKey) {
-      event.preventDefault();
-      void sendCandidateMessage();
-    }
-  }
-
-  async function requestDebrief() {
-    if (loading || !hasRecruiterReply) {
-      return;
-    }
-    await sendSimulatorMessages([...messages, { role: "user", content: "DEBRIEF" }]);
-  }
-
-  function restartInterview() {
-    setMessages([]);
-    setDraft("");
-    setError("");
-  }
-
-  async function copyResult() {
-    if (!currentResult) {
-      return;
-    }
-    try {
-      await navigator.clipboard.writeText(currentResult);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 2000);
-    } catch {
-      setError("Impossible de copier le texte.");
-    }
-  }
-
-  function onSubmitWriting(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    void generateWriting();
-  }
-
-  return (
-    <div className="min-h-full bg-slate-100">
-      <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-8 sm:px-6 lg:px-8">
-        <header className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200/70 sm:p-8">
-          <p className="text-sm font-semibold tracking-wide text-indigo-600 uppercase">
-            Assistant emploi
-          </p>
-          <h1 className="mt-1 text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">
-            JobCoach AI
-          </h1>
-          <p className="mt-2 max-w-2xl text-base leading-7 text-slate-600">
-            Rédigez un CV, une lettre et préparez vos entretiens, sans inventer
-            votre parcours.
-          </p>
-        </header>
-
-        <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200/70 sm:p-6">
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <Field
-              id="cv"
-              label="Votre CV (texte)"
-              value={cv}
-              onChange={setCv}
-              rows={10}
-              placeholder="Collez ici le texte de votre CV : expériences, formation, compétences, langues, réalisations."
-            />
-            <Field
-              id="offer"
-              label="Offre d'emploi"
-              value={offer}
-              onChange={setOffer}
-              rows={10}
-              placeholder="Collez ici l'offre d'emploi : intitulé, entreprise, missions, profil recherché."
-            />
-          </div>
-          <div className="mt-4">
-            <Field
-              id="extra"
-              label="Informations complémentaires"
-              value={extra}
-              onChange={setExtra}
-              rows={5}
-              placeholder="Parcours, métier visé, compétences, langues, contraintes, réalisations chiffrées. Indispensable pour créer un CV."
-            />
-          </div>
-        </section>
-
-        <section className="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200/70">
-          <div
-            className="flex gap-1 overflow-x-auto border-b border-slate-200 px-3 pt-3 sm:px-4"
-            role="tablist"
-            aria-label="Modules JobCoach"
-          >
-            {TABS.map((tab) => {
-              const selected = tab.id === activeTab;
-              return (
-                <button
-                  key={tab.id}
-                  type="button"
-                  role="tab"
-                  aria-selected={selected}
-                  onClick={() => {
-                    setActiveTab(tab.id);
-                    setError("");
-                    setCopied(false);
-                  }}
-                  className={`whitespace-nowrap rounded-t-lg px-3 py-2.5 text-sm font-medium transition ${
-                    selected
-                      ? "bg-indigo-50 text-indigo-700 ring-1 ring-indigo-100"
-                      : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-                  }`}
+          <div className="mx-auto grid w-full max-w-6xl gap-10 px-4 py-10 sm:px-6 sm:py-16 lg:grid-cols-[1.15fr_0.85fr] lg:items-center lg:gap-12 lg:px-8 lg:py-24">
+            <div>
+              <p className="hero-kicker text-xs font-semibold tracking-[0.22em] text-clay uppercase sm:text-sm">
+                Coach emploi
+              </p>
+              <h1 className="hero-title mt-4 font-serif text-[2rem] leading-[1.15] text-ink sm:text-5xl lg:text-6xl">
+                Le site qui prépare votre candidature{" "}
+                <span className="italic text-forest">sans inventer</span> votre
+                parcours.
+              </h1>
+              <p className="hero-text mt-5 max-w-xl text-base leading-7 text-muted sm:mt-6 sm:text-lg sm:leading-8">
+                JobCoach AI aide les chercheurs d&apos;emploi à rédiger un CV, une
+                lettre de motivation et à se préparer à l&apos;entretien. L&apos;assistant
+                s&apos;appuie uniquement sur vos informations. Si quelque chose
+                manque, il le dit.
+              </p>
+              <div className="hero-actions mt-6 flex w-full flex-col gap-3 sm:mt-8 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center sm:gap-4">
+                <Link
+                  href="/coach"
+                  className="btn-shine inline-flex items-center justify-center rounded-full bg-forest px-6 py-3 text-sm font-semibold text-cream transition hover:bg-forest-light hover:scale-[1.03]"
                 >
-                  {tab.label}
-                </button>
-              );
-            })}
-          </div>
-
-          <div className="p-5 sm:p-6" role="tabpanel">
-            {error ? (
-              <div
-                className="mb-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800"
-                role="alert"
-              >
-                {error}
+                  Ouvrir l&apos;assistant
+                </Link>
+                <a
+                  href="#outils"
+                  className="inline-flex items-center justify-center rounded-full border border-ink/15 bg-cream px-6 py-3 text-sm font-semibold text-ink transition hover:border-ink/30 hover:scale-[1.03]"
+                >
+                  Découvrir les outils
+                </a>
               </div>
-            ) : null}
-
-            {WRITING_MODULES.includes(activeTab) ? (
-              <form onSubmit={onSubmitWriting} className="flex flex-col gap-4">
-                {missing.length > 0 ? (
-                  <p className="text-sm text-slate-600">{missingMessage(missing)}</p>
-                ) : (
-                  <p className="text-sm text-slate-500">
-                    Les champs requis sont remplis. Vous pouvez générer.
-                  </p>
-                )}
-
-                <div className="flex flex-wrap items-center gap-3">
-                  <button
-                    type="submit"
-                    disabled={!canGenerate}
-                    className="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300"
-                  >
-                    {loading ? <Spinner /> : null}
-                    {loading ? "Génération en cours…" : "Générer"}
-                  </button>
-                  {currentResult ? (
-                    <button
-                      type="button"
-                      onClick={() => void copyResult()}
-                      className="rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-                    >
-                      {copied ? "Copié" : "Copier"}
-                    </button>
-                  ) : null}
+              <dl className="hero-stats mt-8 grid max-w-lg grid-cols-3 gap-2 border-t border-sand pt-5 sm:mt-10 sm:gap-4 sm:pt-6">
+                <div>
+                  <dt className="text-[10px] tracking-wide text-muted uppercase sm:text-xs">Outils</dt>
+                  <dd className="mt-1 font-serif text-2xl text-ink sm:text-3xl">5</dd>
                 </div>
+                <div>
+                  <dt className="text-[10px] tracking-wide text-muted uppercase sm:text-xs">Compte</dt>
+                  <dd className="mt-1 font-serif text-2xl text-ink sm:text-3xl">0</dd>
+                </div>
+                <div>
+                  <dt className="text-[10px] tracking-wide text-muted uppercase sm:text-xs">Sauvegarde</dt>
+                  <dd className="mt-1 font-serif text-xl text-ink sm:text-3xl">Aucune</dd>
+                </div>
+              </dl>
+            </div>
 
-                {loading && !currentResult ? (
-                  <p className="text-sm text-slate-500" aria-live="polite">
-                    Rédaction en cours, cela peut prendre quelques secondes.
+            <aside className="hero-card relative min-w-0">
+              <div className="hero-card-float rounded-[1.5rem] border border-sand bg-cream p-5 shadow-[0_24px_60px_rgba(28,25,21,0.08)] sm:rounded-[2rem] sm:p-6">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold tracking-[0.18em] text-gold uppercase">
+                    Aperçu
                   </p>
-                ) : null}
-
-                {currentResult ? (
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-5">
-                    <Markdown content={currentResult} />
+                  <span className="inline-flex items-center gap-2 text-xs text-muted">
+                    <span className="relative flex h-2 w-2">
+                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-clay opacity-60" />
+                      <span className="relative inline-flex h-2 w-2 rounded-full bg-clay" />
+                    </span>
+                    Sans compte
+                  </span>
+                </div>
+                <p className="mt-3 font-serif text-2xl text-ink">
+                  Ce que l&apos;assistant refuse de faire
+                </p>
+                <ul className="mt-5 space-y-3 text-sm leading-6 text-muted">
+                  <li className="flex gap-3">
+                    <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-clay" />
+                    Inventer une expérience, un diplôme ou un chiffre
+                  </li>
+                  <li className="flex gap-3">
+                    <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-clay" />
+                    Garder votre CV sur un serveur
+                  </li>
+                  <li className="flex gap-3">
+                    <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-clay" />
+                    Vous noyer sous des phrases toutes faites
+                  </li>
+                </ul>
+                <div className="mt-6 space-y-3">
+                  <div>
+                    <div className="flex justify-between text-xs text-muted">
+                      <span>Fidélité au parcours</span>
+                      <span>100%</span>
+                    </div>
+                    <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-sand">
+                      <div className="score-bar h-full w-full rounded-full bg-forest" />
+                    </div>
                   </div>
-                ) : null}
-              </form>
-            ) : (
-              <SimulatorPanel
-                missing={missing}
-                missingText={missingMessage(missing)}
-                loading={loading}
-                interviewStarted={interviewStarted}
-                hasRecruiterReply={hasRecruiterReply}
-                messages={messages}
-                draft={draft}
-                onDraftChange={setDraft}
-                onStart={() => void startInterview()}
-                onSend={() => void sendCandidateMessage()}
-                onDraftKeyDown={onDraftKeyDown}
-                onDebrief={() => void requestDebrief()}
-                onRestart={restartInterview}
-              />
-            )}
-          </div>
-        </section>
-      </div>
-    </div>
-  );
-}
-
-type FieldProps = {
-  id: string;
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  rows: number;
-  placeholder: string;
-};
-
-function Field({ id, label, value, onChange, rows, placeholder }: FieldProps) {
-  return (
-    <label className="flex flex-col gap-2" htmlFor={id}>
-      <span className="text-sm font-medium text-slate-800">{label}</span>
-      <textarea
-        id={id}
-        value={value}
-        maxLength={MAX_FIELD_LENGTH}
-        rows={rows}
-        placeholder={placeholder}
-        onChange={(event) => onChange(event.target.value)}
-        className="w-full resize-y rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm leading-6 text-slate-800 shadow-sm outline-none placeholder:text-slate-400 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-      />
-    </label>
-  );
-}
-
-type SimulatorPanelProps = {
-  missing: string[];
-  missingText: string;
-  loading: boolean;
-  interviewStarted: boolean;
-  hasRecruiterReply: boolean;
-  messages: ChatMessage[];
-  draft: string;
-  onDraftChange: (value: string) => void;
-  onStart: () => void;
-  onSend: () => void;
-  onDraftKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
-  onDebrief: () => void;
-  onRestart: () => void;
-};
-
-function SimulatorPanel({
-  missing,
-  missingText,
-  loading,
-  interviewStarted,
-  hasRecruiterReply,
-  messages,
-  draft,
-  onDraftChange,
-  onStart,
-  onSend,
-  onDraftKeyDown,
-  onDebrief,
-  onRestart,
-}: SimulatorPanelProps) {
-  return (
-    <div className="flex flex-col gap-4">
-      {missing.length > 0 ? (
-        <p className="text-sm text-slate-600">{missingText}</p>
-      ) : (
-        <p className="text-sm text-slate-500">
-          Le recruteur pose une question à la fois. Envoyez « Demander le débrief »
-          pour sortir du rôle et obtenir une évaluation.
-        </p>
-      )}
-
-      <div className="flex flex-wrap items-center gap-3">
-        <button
-          type="button"
-          onClick={onStart}
-          disabled={missing.length > 0 || loading || interviewStarted}
-          className="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300"
-        >
-          {loading && !interviewStarted ? <Spinner /> : null}
-          Démarrer l&apos;entretien
-        </button>
-        <button
-          type="button"
-          onClick={onDebrief}
-          disabled={!hasRecruiterReply || loading}
-          className="rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-2.5 text-sm font-semibold text-indigo-700 transition hover:bg-indigo-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
-        >
-          Demander le débrief
-        </button>
-        <button
-          type="button"
-          onClick={onRestart}
-          disabled={!interviewStarted || loading}
-          className="rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
-        >
-          Recommencer
-        </button>
-      </div>
-
-      <div className="flex min-h-72 flex-col gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
-        {!interviewStarted ? (
-          <p className="m-auto text-center text-sm text-slate-500">
-            {missing.length > 0
-              ? "Remplissez le CV et l'offre, puis démarrez l'entretien."
-              : "Cliquez sur « Démarrer l'entretien » pour que le recruteur pose la première question."}
-          </p>
-        ) : (
-          messages.map((message, index) => {
-            const isUser = message.role === "user";
-            const isDebrief = message.content === "DEBRIEF";
-            return (
-              <div
-                key={`${message.role}-${index}`}
-                className={`flex ${isUser ? "justify-end" : "justify-start"}`}
-              >
-                <div
-                  className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-6 shadow-sm sm:max-w-[75%] ${
-                    isUser
-                      ? "rounded-br-sm bg-indigo-600 text-white"
-                      : "rounded-bl-sm bg-white text-slate-800 ring-1 ring-slate-200"
-                  }`}
-                >
-                  <p
-                    className={`mb-1 text-xs font-semibold ${
-                      isUser ? "text-indigo-100" : "text-indigo-600"
-                    }`}
-                  >
-                    {isUser ? "Candidat" : "Recruteur"}
+                  <div>
+                    <div className="flex justify-between text-xs text-muted">
+                      <span>Phrases inventées</span>
+                      <span>0</span>
+                    </div>
+                    <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-sand">
+                      <div className="h-full w-0 rounded-full bg-clay" />
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-6 rounded-2xl bg-forest px-5 py-4 text-cream">
+                  <p className="font-serif text-lg">Honnête, puis utile.</p>
+                  <p className="mt-1 text-sm leading-6 text-cream/75">
+                    Si une information manque, JobCoach AI la signale au lieu de
+                    la deviner.
                   </p>
-                  {isUser ? (
-                    <p className="whitespace-pre-wrap">
-                      {isDebrief ? "Demande de débrief" : message.content}
-                    </p>
-                  ) : (
-                    <Markdown content={message.content} />
-                  )}
                 </div>
               </div>
-            );
-          })
-        )}
-        {loading && interviewStarted ? (
-          <p className="text-sm text-slate-500" aria-live="polite">
-            Le recruteur réfléchit…
-          </p>
-        ) : null}
-      </div>
+            </aside>
+          </div>
+        </section>
 
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-        <label className="flex-1" htmlFor="simulator-draft">
-          <span className="sr-only">Votre réponse au recruteur</span>
-          <textarea
-            id="simulator-draft"
-            value={draft}
-            rows={3}
-            maxLength={MAX_FIELD_LENGTH}
-            disabled={!interviewStarted || loading}
-            placeholder={
-              interviewStarted
-                ? "Écrivez votre réponse, puis Entrée pour envoyer. Maj+Entrée pour une nouvelle ligne."
-                : "Démarrez l'entretien pour répondre au recruteur."
-            }
-            onChange={(event) => onDraftChange(event.target.value)}
-            onKeyDown={onDraftKeyDown}
-            className="w-full resize-y rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm leading-6 text-slate-800 shadow-sm outline-none placeholder:text-slate-400 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 disabled:bg-slate-50"
-          />
-        </label>
-        <button
-          type="button"
-          onClick={onSend}
-          disabled={!interviewStarted || loading || !draft.trim()}
-          className="inline-flex h-11 items-center justify-center rounded-lg bg-indigo-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300"
-        >
-          Envoyer
-        </button>
-      </div>
+        <div className="overflow-hidden border-y border-sand bg-forest py-4 text-cream">
+          <div className="marquee-track gap-10 pr-10 text-sm tracking-[0.18em] uppercase">
+            {[...MARQUEE, ...MARQUEE].map((item, index) => (
+              <span key={`${item}-${index}`} className="flex items-center gap-10">
+                {item}
+                <span className="h-1 w-1 rounded-full bg-gold" />
+              </span>
+            ))}
+          </div>
+        </div>
+
+        <section id="outils" className="scroll-mt-20 bg-cream/60">
+          <div className="mx-auto w-full max-w-6xl px-4 py-12 sm:px-6 sm:py-16 lg:px-8 lg:py-20">
+            <Reveal>
+              <p className="text-sm font-semibold tracking-[0.22em] text-clay uppercase">
+                Cinq outils
+              </p>
+              <h2 className="mt-3 font-serif text-[1.75rem] leading-tight text-ink sm:text-4xl">
+                Un site pensé pour chaque étape de la candidature.
+              </h2>
+              <p className="mt-4 max-w-2xl text-base leading-7 text-muted">
+                Vous n&apos;avez pas besoin de cinq applications. JobCoach AI
+                rassemble ce qu&apos;un chercheur d&apos;emploi prépare vraiment :
+                le document, la lettre, puis la voix.
+              </p>
+            </Reveal>
+
+            <div className="mt-10 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {OUTILS.map((outil, index) => (
+                <Reveal key={outil.numero} delay={index * 90}>
+                  <article className="card-lift flex h-full flex-col rounded-3xl border border-sand bg-cream p-6">
+                    <span className="font-serif text-sm text-gold">{outil.numero}</span>
+                    <h3 className="mt-3 font-serif text-2xl text-ink">{outil.titre}</h3>
+                    <p className="mt-3 flex-1 text-sm leading-7 text-muted">{outil.texte}</p>
+                  </article>
+                </Reveal>
+              ))}
+              <Reveal delay={450}>
+                <article className="card-lift flex h-full flex-col justify-between rounded-3xl bg-forest p-6 text-cream md:col-span-2 lg:col-span-1">
+                  <div>
+                    <p className="font-serif text-2xl">Prêt à essayer ?</p>
+                    <p className="mt-3 text-sm leading-7 text-cream/75">
+                      Aucune inscription. Collez un texte, choisissez un outil,
+                      obtenez une première version.
+                    </p>
+                  </div>
+                  <Link
+                    href="/coach"
+                    className="btn-shine mt-6 inline-flex w-fit items-center rounded-full bg-cream px-4 py-2 text-sm font-semibold text-forest transition hover:scale-[1.03]"
+                  >
+                    Lancer l&apos;assistant
+                  </Link>
+                </article>
+              </Reveal>
+            </div>
+          </div>
+        </section>
+
+        <section id="methode" className="mx-auto w-full max-w-6xl scroll-mt-20 px-4 py-12 sm:px-6 sm:py-16 lg:px-8 lg:py-20">
+          <Reveal>
+            <p className="text-sm font-semibold tracking-[0.22em] text-clay uppercase">
+              Comment ça marche
+            </p>
+            <h2 className="mt-3 font-serif text-[1.75rem] leading-tight text-ink sm:text-4xl">
+              Trois gestes. Pas de compte, pas de fichier oublié.
+            </h2>
+          </Reveal>
+          <ol className="mt-10 grid gap-6 md:grid-cols-3">
+            {ETAPES.map((etape, index) => (
+              <li key={etape.numero}>
+                <Reveal delay={index * 120}>
+                  <div className="relative border-t border-gold/50 pt-6">
+                    <span className="font-serif text-5xl text-sand">{etape.numero}</span>
+                    <h3 className="mt-4 font-serif text-2xl text-ink">{etape.titre}</h3>
+                    <p className="mt-3 text-sm leading-7 text-muted">{etape.texte}</p>
+                  </div>
+                </Reveal>
+              </li>
+            ))}
+          </ol>
+        </section>
+
+        <section id="promesse" className="relative scroll-mt-20 overflow-hidden bg-forest text-cream">
+          <div className="orb orb-gold top-[-5rem] left-[10%] h-56 w-56 opacity-40" />
+          <div className="mx-auto grid w-full max-w-6xl gap-8 px-4 py-12 sm:px-6 sm:py-16 lg:grid-cols-2 lg:items-center lg:gap-10 lg:px-8 lg:py-20">
+            <Reveal>
+              <p className="text-sm font-semibold tracking-[0.22em] text-gold uppercase">
+                Notre promesse
+              </p>
+              <h2 className="mt-3 font-serif text-[1.75rem] leading-tight sm:text-4xl">
+                Un coach exigeant, pas un générateur de fiction.
+              </h2>
+              <p className="mt-5 text-base leading-8 text-cream/75">
+                Beaucoup d&apos;outils remplissent les blancs pour faire joli.
+                JobCoach AI fait l&apos;inverse : il reste fidèle à votre
+                expérience, signale ce qui manque, et vous laisse le dernier mot.
+              </p>
+            </Reveal>
+            <ul className="space-y-4">
+              <li>
+                <Reveal delay={80}>
+                  <div className="rounded-2xl border border-cream/15 bg-cream/5 p-5 transition hover:border-gold/50 hover:bg-cream/10">
+                    <p className="font-serif text-xl">Pas d&apos;invention</p>
+                    <p className="mt-2 text-sm leading-6 text-cream/70">
+                      Aucune entreprise, compétence ou résultat chiffré n&apos;est
+                      ajouté s&apos;il n&apos;est pas dans vos textes.
+                    </p>
+                  </div>
+                </Reveal>
+              </li>
+              <li>
+                <Reveal delay={160}>
+                  <div className="rounded-2xl border border-cream/15 bg-cream/5 p-5 transition hover:border-gold/50 hover:bg-cream/10">
+                    <p className="font-serif text-xl">Pas de trace</p>
+                    <p className="mt-2 text-sm leading-6 text-cream/70">
+                      Pas de base de données, pas d&apos;historique. Fermer la page
+                      suffit à tout effacer.
+                    </p>
+                  </div>
+                </Reveal>
+              </li>
+              <li>
+                <Reveal delay={240}>
+                  <div className="rounded-2xl border border-cream/15 bg-cream/5 p-5 transition hover:border-gold/50 hover:bg-cream/10">
+                    <p className="font-serif text-xl">Un ton direct</p>
+                    <p className="mt-2 text-sm leading-6 text-cream/70">
+                      Bienveillant, mais honnête. Un débrief peut conclure
+                      « à retravailler » si c&apos;est le cas.
+                    </p>
+                  </div>
+                </Reveal>
+              </li>
+            </ul>
+          </div>
+        </section>
+
+        <section className="mx-auto w-full max-w-6xl px-4 py-16 sm:px-6 lg:px-8 lg:py-24">
+          <Reveal>
+            <div className="rounded-[1.5rem] bg-cream px-5 py-10 text-center shadow-[0_24px_60px_rgba(28,25,21,0.06)] sm:rounded-[2rem] sm:px-12 sm:py-12">
+              <h2 className="font-serif text-[1.75rem] leading-tight text-ink sm:text-4xl">
+                Votre prochaine candidature mérite mieux qu&apos;un modèle vide.
+              </h2>
+              <p className="mx-auto mt-4 max-w-2xl text-base leading-7 text-muted">
+                Ouvrez l&apos;assistant, collez ce que vous avez déjà, et repartez
+                avec un texte utilisable — CV, lettre ou préparation d&apos;entretien.
+              </p>
+              <Link
+                href="/coach"
+                className="btn-shine mt-8 inline-flex items-center rounded-full bg-clay px-7 py-3 text-sm font-semibold text-cream transition hover:scale-[1.04] hover:bg-[#b05020]"
+              >
+                Commencer maintenant
+              </Link>
+            </div>
+          </Reveal>
+        </section>
+      </main>
+
+      <SiteFooter />
     </div>
   );
 }

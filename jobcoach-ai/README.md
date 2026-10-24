@@ -30,10 +30,10 @@ Ouvrez `.env.local` et renseignez :
 
 ```
 GEMINI_API_KEY=votre_cle_ici
-GEMINI_MODEL=gemma-4-31b-it
+GEMINI_MODEL=gemma-4-26b-a4b-it
 ```
 
-`GEMINI_MODEL` est optionnel : s'il est absent, l'application utilise `gemma-4-31b-it`.
+`GEMINI_MODEL` est optionnel : s'il est absent, l'application utilise `gemma-4-26b-a4b-it`. Si `gemma-4-31b-it` renvoie une erreur interne, l'application bascule automatiquement sur ce modèle.
 
 Lancez le serveur de développement :
 
@@ -48,7 +48,7 @@ Ouvrez [http://localhost:3000](http://localhost:3000).
 1. Importez le dépôt dans [Vercel](https://vercel.com/new).
 2. Dans **Settings → Environment Variables**, ajoutez :
    - `GEMINI_API_KEY` : votre clé Google AI Studio
-   - `GEMINI_MODEL` : `gemma-4-31b-it` (recommandé)
+   - `GEMINI_MODEL` : `gemma-4-26b-a4b-it` (recommandé)
 3. Déployez.
 
 Ne placez jamais la clé dans le code client ni dans un fichier commité.

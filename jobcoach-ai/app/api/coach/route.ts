@@ -1,5 +1,11 @@
 import { ApiError } from "@google/genai";
-import { generateText } from "@/lib/gemini";
+import {
+  generateText,
+  hasGeminiApiKey,
+  isAuthError,
+  isModelError,
+  MissingApiKeyError,
+} from "@/lib/gemini";
 import type { GeminiContent } from "@/lib/gemini";
 import {
   COACH_MODULES,
@@ -146,6 +152,10 @@ function isQuotaError(error: unknown): boolean {
   return false;
 }
 
+export async function GET(): Promise<Response> {
+  return Response.json({ configured: hasGeminiApiKey() });
+}
+
 export async function POST(request: Request): Promise<Response> {
   let rawBody: unknown;
   try {
@@ -193,6 +203,10 @@ export async function POST(request: Request): Promise<Response> {
     return jsonError(missing, 400);
   }
 
+  if (!hasGeminiApiKey()) {
+    return jsonError(new MissingApiKeyError().message, 503);
+  }
+
   try {
     if (WRITING_MODULES.includes(body.module)) {
       const userContent = buildUserContent(body.cv, body.offer, body.extra);
@@ -234,9 +248,27 @@ ${offer}`;
 
     return jsonResult(result);
   } catch (error) {
+    if (error instanceof MissingApiKeyError) {
+      return jsonError(error.message, 503);
+    }
     if (isQuotaError(error)) {
       return jsonError("Le quota de l'API est dépassé. Réessayez plus tard.", 429);
     }
-    return jsonError("Une erreur est survenue. Veuillez réessayer.", 500);
+    if (isAuthError(error)) {
+      return jsonError(
+        "La clé API Gemini est invalide ou refusée. Vérifiez GEMINI_API_KEY dans .env, puis relancez le serveur.",
+        503,
+      );
+    }
+    if (isModelError(error)) {
+      return jsonError(
+        "Le modèle IA est indisponible. Vérifiez GEMINI_MODEL dans .env.local.",
+        502,
+      );
+    }
+
+    const detail = error instanceof Error ? error.message : "erreur inconnue";
+    console.error("[coach] génération échouée:", detail);
+    return jsonError("La génération a échoué. Vérifiez votre configuration et réessayez.", 500);
   }
 }
