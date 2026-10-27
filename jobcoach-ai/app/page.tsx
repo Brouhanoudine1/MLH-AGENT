@@ -85,7 +85,7 @@ export default function Accueil() {
                 Le site qui prépare votre candidature{" "}
                 <span className="italic text-forest">sans inventer</span> votre
                 parcours.
-              </h1>
+          </h1>
               <p className="hero-text mt-5 max-w-xl text-base leading-7 text-muted sm:mt-6 sm:text-lg sm:leading-8">
                 JobCoach AI aide les chercheurs d&apos;emploi à rédiger un CV, une
                 lettre de motivation et à se préparer à l&apos;entretien. L&apos;assistant
@@ -337,7 +337,7 @@ export default function Accueil() {
               >
                 Commencer maintenant
               </Link>
-            </div>
+        </div>
           </Reveal>
         </section>
       </main>
